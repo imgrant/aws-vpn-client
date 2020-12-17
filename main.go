@@ -27,30 +27,25 @@ func main() {
 	sourceConfigFile := flag.String("config", "~/.awsvpn.conf", "Source aws vpn config file")
 	flag.Parse()
 	configFilename, serverURL, serverPort, err := createTempConfigFile(*sourceConfigFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.Remove(configFilename)
 	ips, err := net.LookupIP("dns." + serverURL) // have to use "random" subdomain
 	if err != nil || len(ips) == 0 {
 		fmt.Fprintf(os.Stderr, "Could not get IPs for VPN server : %v\n", err)
 		os.Exit(1)
 	}
-
 	serverURL = ips[0].String()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.Remove(configFilename)
 	fmt.Printf("Starting vpn to %s:%s\n", serverURL, serverPort)
 	//Connect once to find the saml auth url to use
-	samlAuthpage, sid, err := initalcontactFindSAMLURL(configFilename, serverURL, serverPort)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Opening webpage to auth now", samlAuthpage)
-	openbrowser(samlAuthpage)
-	a := newSAMLAuth(sid, serverURL, serverPort, configFilename)
+
+	a := newawsSAMLAuthWrapper(serverURL, serverPort, configFilename)
 	a.runHTTPServer()
 }
 
-type SAMLAuth struct {
+type awsSAMLAuthWrapper struct {
+	reauthrequest    chan bool
 	samlResponseChan chan string
 	sidID            string
 	server           string
@@ -58,18 +53,26 @@ type SAMLAuth struct {
 	confpath         string
 }
 
-func newSAMLAuth(sid, server, port, confpath string) *SAMLAuth {
-	s := &SAMLAuth{samlResponseChan: make(chan string, 2), sidID: sid, server: server, port: port, confpath: confpath}
+func newawsSAMLAuthWrapper(server, port, confpath string) *awsSAMLAuthWrapper {
+	s := &awsSAMLAuthWrapper{
+		samlResponseChan: make(chan string, 2),
+		sidID:            "",
+		server:           server,
+		port:             port,
+		confpath:         confpath,
+		reauthrequest:    make(chan bool, 2),
+	}
 	return s
 }
-func (s *SAMLAuth) runHTTPServer() {
+func (s *awsSAMLAuthWrapper) runHTTPServer() {
 	go s.worker()
+	s.reauthrequest <- true // Kick it all off
 	http.HandleFunc("/", s.handleSAMLServer)
 	log.Printf("Starting HTTP server at 127.0.0.1:35001")
 	http.ListenAndServe("127.0.0.1:35001", nil)
 }
 
-func (s *SAMLAuth) worker() {
+func (s *awsSAMLAuthWrapper) worker() {
 	//Listens for events from saml http server and spawns openvpn as appropriate
 	for {
 		select {
@@ -80,11 +83,22 @@ func (s *SAMLAuth) worker() {
 			//we have authentication, lets spawn the correct openvpn
 			fmt.Println("Starting the actual openvpn ")
 			runOpenVPNAuthenticated(auth, s.sidID, s.server, s.port, s.confpath)
-
+		case <-s.reauthrequest:
+			//Startup the first stage to get our authentication going
+			s.stageOne()
 		}
 	}
 }
-func (s *SAMLAuth) handleSAMLServer(w http.ResponseWriter, r *http.Request) {
+func (s *awsSAMLAuthWrapper) stageOne() {
+	samlAuthpage, sid, err := initalcontactFindSAMLURL(s.confpath, s.server, s.port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s.sidID = sid
+	fmt.Println("Opening webpage to auth now", samlAuthpage)
+	openbrowser(samlAuthpage)
+}
+func (s *awsSAMLAuthWrapper) handleSAMLServer(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "POST":
 		if err := r.ParseForm(); err != nil {
