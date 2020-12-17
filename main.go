@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -26,7 +28,19 @@ import (
 func main() {
 	sourceConfigFile := flag.String("config", "~/.awsvpn.conf", "Source aws vpn config file")
 	flag.Parse()
-	configFilename, serverURL, serverPort, err := createTempConfigFile(*sourceConfigFile)
+	filePath := *sourceConfigFile
+	usr, _ := user.Current()
+	dir := usr.HomeDir
+	if filePath == "~" {
+		// In case of "~", which won't be caught by the "else if"
+		filePath = dir
+	} else if strings.HasPrefix(filePath, "~/") {
+		// Use strings.HasPrefix so we don't match paths like
+		// "/something/~/something/"
+		filePath = filepath.Join(dir, filePath[2:])
+	}
+	fmt.Println("Loading config from", filePath)
+	configFilename, serverURL, serverPort, err := createTempConfigFile(filePath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -69,7 +83,8 @@ func (s *awsSAMLAuthWrapper) runHTTPServer() {
 	s.reauthrequest <- true // Kick it all off
 	http.HandleFunc("/", s.handleSAMLServer)
 	log.Printf("Starting HTTP server at 127.0.0.1:35001")
-	http.ListenAndServe("127.0.0.1:35001", nil)
+	err := http.ListenAndServe("127.0.0.1:35001", nil)
+	log.Fatal(err)
 }
 
 func (s *awsSAMLAuthWrapper) worker() {
