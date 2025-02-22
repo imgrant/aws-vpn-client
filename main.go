@@ -26,7 +26,8 @@ import (
  */
 
 func main() {
-	sourceConfigFile := flag.String("config", "~/.awsvpn.conf", "Source aws vpn config file")
+	sourceConfigFile := flag.String("config", "~/.config/openvpn/vpn.conf", "Path to the OpenVPN config file")
+	openvpnBinary := flag.String("openvpn", "openvpn", "Path to the AWS-patched OpenVPN binary")
 	flag.Parse()
 	filePath := *sourceConfigFile
 	usr, _ := user.Current()
@@ -54,7 +55,7 @@ func main() {
 	fmt.Printf("Starting vpn to %s:%s\n", serverURL, serverPort)
 	//Connect once to find the saml auth url to use
 
-	a := newawsSAMLAuthWrapper(serverURL, serverPort, configFilename)
+	a := newawsSAMLAuthWrapper(serverURL, serverPort, configFilename, *openvpnBinary)
 	a.runHTTPServer()
 }
 
@@ -65,9 +66,10 @@ type awsSAMLAuthWrapper struct {
 	server           string
 	port             string
 	confpath         string
+	openvpnBinary    string
 }
 
-func newawsSAMLAuthWrapper(server, port, confpath string) *awsSAMLAuthWrapper {
+func newawsSAMLAuthWrapper(server, port, confpath, openvpnBinary string) *awsSAMLAuthWrapper {
 	s := &awsSAMLAuthWrapper{
 		samlResponseChan: make(chan string, 2),
 		sidID:            "",
@@ -75,6 +77,7 @@ func newawsSAMLAuthWrapper(server, port, confpath string) *awsSAMLAuthWrapper {
 		port:             port,
 		confpath:         confpath,
 		reauthrequest:    make(chan bool, 2),
+		openvpnBinary:    openvpnBinary,
 	}
 	return s
 }
@@ -97,7 +100,7 @@ func (s *awsSAMLAuthWrapper) worker() {
 			}
 			//we have authentication, lets spawn the correct openvpn
 			fmt.Println("Starting the actual openvpn ")
-			runOpenVPNAuthenticated(auth, s.sidID, s.server, s.port, s.confpath)
+			runOpenVPNAuthenticated(auth, s.sidID, s.server, s.port, s.confpath, s.openvpnBinary)
 		case <-s.reauthrequest:
 			//Startup the first stage to get our authentication going
 			s.stageOne()
@@ -105,7 +108,7 @@ func (s *awsSAMLAuthWrapper) worker() {
 	}
 }
 func (s *awsSAMLAuthWrapper) stageOne() {
-	samlAuthpage, sid, err := initalcontactFindSAMLURL(s.confpath, s.server, s.port)
+	samlAuthpage, sid, err := initalcontactFindSAMLURL(s.confpath, s.server, s.port, s.openvpnBinary)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -133,7 +136,7 @@ func (s *awsSAMLAuthWrapper) handleSAMLServer(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func runOpenVPNAuthenticated(samlAuth, sid, server, serverPort, confpath string) {
+func runOpenVPNAuthenticated(samlAuth, sid, server, serverPort, confpath, openvpnBinary string) {
 	fmt.Printf("Running openvpn with SID:%s server %s:%s\n", sid, server, serverPort)
 	destFile, err := ioutil.TempFile("", "aws_vpn_wrapper_config_*.password")
 	if err != nil {
@@ -143,7 +146,7 @@ func runOpenVPNAuthenticated(samlAuth, sid, server, serverPort, confpath string)
 	destFile.WriteString(commandInput)
 	destFile.Close()
 
-	cmd := exec.Command("sudo", "./openvpn-patched", "--config", confpath, "--remote", server, serverPort, "--auth-user-pass", destFile.Name())
+	cmd := exec.Command("sudo", openvpnBinary, "--config", confpath, "--remote", server, serverPort, "--auth-user-pass", destFile.Name())
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	err = cmd.Start()
@@ -173,7 +176,7 @@ func openbrowser(url string) {
 
 }
 
-func initalcontactFindSAMLURL(confpath, server, serverPort string) (SAMLString, sid string, err error) {
+func initalcontactFindSAMLURL(confpath, server, serverPort, openvpnBinary string) (SAMLString, sid string, err error) {
 	destFile, err := ioutil.TempFile("", "aws_vpn_wrapper_config_*.password")
 	if err != nil {
 		return
@@ -182,7 +185,7 @@ func initalcontactFindSAMLURL(confpath, server, serverPort string) (SAMLString, 
 	destFile.WriteString(commandInput)
 	destFile.Close()
 
-	cmd := exec.Command("./openvpn-patched", "--config", confpath, "--remote", server, serverPort, "--auth-user-pass", destFile.Name())
+	cmd := exec.Command(openvpnBinary, "--config", confpath, "--remote", server, serverPort, "--auth-user-pass", destFile.Name())
 	var outb bytes.Buffer
 	cmd.Stdout = &outb
 	cmd.Stderr = os.Stderr
