@@ -9,7 +9,9 @@ AWS’s implementation of SAML authentication via an external IdP is ~~an ugly h
 
 `aws-vpn-client` is a Go-based CLI tool that simplifies the process of connecting to AWS Client VPN with SAML authentication, without having to use the official client. It leverages a patched version of [OpenVPN](https://openvpn.net/source-code/) to support the necessary authentication mechanisms.
 
-Use cases include, being able to customise your OpenVPN client configuration (eg leverage `up` and `down` scripts), or to use with Linux distributions other than those [supported by the official client](https://docs.aws.amazon.com/vpn/latest/clientvpn-user/client-vpn-connect-linux.html#client-vpn-connect-linux-install).
+Use cases include, being able to customise your OpenVPN client configuration (eg leverage `up` and `down` scripts[^scopeddnsutil]), or to use with Linux distributions other than those [supported by the official client](https://docs.aws.amazon.com/vpn/latest/clientvpn-user/client-vpn-connect-linux.html#client-vpn-connect-linux-install).
+
+[^scopeddnsutil]: If you're on macOS, you might like to use this in conjunction with [scopeddnsutil](https://github.com/imgrant/scopeddnsutil), to dynamically configure scoped (split-horizon) DNS resolution.
 
 ## Building the client
 
