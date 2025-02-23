@@ -1,3 +1,5 @@
-openvpncompile/
-openvpn-patched
-aws-vpn-wrapper
+.vscode
+aws-vpn-client
+result
+config.ovpn
+
