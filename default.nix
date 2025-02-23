@@ -19,7 +19,7 @@ buildGoModule rec {
     description = "AWS VPN Client wrapper for handling SAML authentication";
     homepage = "https://github.com/imgrant/aws-vpn-client";
     license = licenses.mit;
-    platforms = platforms.darwin;
+    platforms = platforms.unix;
     maintainers = with maintainers; [
       {
         name = "Ian Grant";
