@@ -125,14 +125,14 @@ To use with Nix flakes, add the repository as an input in your flake:
 
 ```nix
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.2411.*";
-
     aws-vpn-client = {
       url = "github:imgrant/aws-vpn-client";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 ```
+
+> [!TIP]
+> Don't use `inputs.nixpkgs.follows` here because we want to ensure that the version of Nixpkgs specified in the flake is used in order for the OpenVPN patch to apply cleanly.
 
 Include it in your outputs section, and pass it to, for example, `environment.systemPackages` in a `darwinConfiguration` or `nixosConfiguration`:
 
